@@ -2,6 +2,7 @@ import fastapi
 from .database import *
 from . import pydantic_models
 from . import config 
+import copy
 
 api = fastapi.FastAPI()
 

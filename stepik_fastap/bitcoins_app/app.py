@@ -3,6 +3,9 @@ from .database import *
 from . import pydantic_models
 from . import config 
 import copy
+from fastapi import WebSocket
+from fastapi.responses import HTMLResponse
+
 
 api = fastapi.FastAPI()
 
@@ -12,6 +15,16 @@ def update_user(user_id: int, user: pydantic_models.User = fastapi.Body()): # и
         if u['id'] == user_id:
             fake_database['users'][index] = user    # обновляем юзера в бд по соответствующему ему индексу из списка users
             return user
+
+
+@api.delete('/user/{user_id}')
+def delete_user(user_id: int = fastapi.Path()): # используя fastapi.Path() мы явно указываем, что переменную нужно брать из пути
+    for index, u in enumerate(fake_database['users']): # так как в нашей бд юзеры хранятся в списке, нам нужно найти их индексы внутри этого списка
+        if u['id'] == user_id:
+            old_db = copy.deepcopy(fake_database) # делаем полную копию объекта в переменную old_db, чтобы было с чем сравнить
+            del fake_database['users'][index]    # удаляем юзера из бд
+            return {'old_db' : old_db,
+                    'new_db': fake_database}
 
 
 @api.post('/user/create')
@@ -50,11 +63,49 @@ def read_user(user_id: str, query: str | None = None):
     return {"item_id": user_id}
 
 
-@api.delete('/user/{user_id}')
-def delete_user(user_id: int = fastapi.Path()): # используя fastapi.Path() мы явно указываем, что переменную нужно брать из пути
-    for index, u in enumerate(fake_database['users']): # так как в нашей бд юзеры хранятся в списке, нам нужно найти их индексы внутри этого списка
-        if u['id'] == user_id:
-            old_db = copy.deepcopy(fake_database) # делаем полную копию объекта в переменную old_db, чтобы было с чем сравнить
-            del fake_database['users'][index]    # удаляем юзера из бд
-            return {'old_db' : old_db,
-                    'new_db': fake_database}
+html = """
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>Chat</title>
+    </head>
+    <body>
+        <h1>WebSocket Chat</h1>
+        <form action="" onsubmit="sendMessage(event)">
+            <input type="text" id="messageText" autocomplete="off"/>
+            <button>Send</button>
+        </form>
+        <ul id='messages'>
+        </ul>
+        <script>
+            var ws = new WebSocket("ws://localhost:8000/ws");
+            ws.onmessage = function(event) {
+                var messages = document.getElementById('messages')
+                var message = document.createElement('li')
+                var content = document.createTextNode(event.data)
+                message.appendChild(content)
+                messages.appendChild(message)
+            };
+            function sendMessage(event) {
+                var input = document.getElementById("messageText")
+                ws.send(input.value)
+                input.value = ''
+                event.preventDefault()
+            }
+        </script>
+    </body>
+</html>
+"""
+
+
+@api.get("/main/")
+async def get():
+    return HTMLResponse(html)
+
+
+@api.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    while True:
+        data = await websocket.receive_text()
+        await websocket.send_text(f"Message text was: {data}")
